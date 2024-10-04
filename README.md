@@ -1,16 +1,26 @@
 # hotspot_hosts
 
-A new Flutter project.
+## Features
 
-## Getting Started
+1. **Experience Type Selection Screen**
+    - Users can select multiple experiences from a list.
+    - Answers can be provided as text in the Onboarding Question Screen.
 
-This project is a starting point for a Flutter application.
+2. **Onboarding Question Screen**
+    - Upon clicking "Next" on the Experience Selection screen, users are navigated to this page.
+    - The screen includes a multi-line text field with a character limit of 600.
+    - Users can record audio answers.
+    - Users can record video answers.
+    - The layout adapts dynamically to the design specifications, removing audio and video recording buttons from the bottom if the corresponding asset has already been recorded.
 
-A few resources to get you started if this is your first Flutter project:
+## Implemented Features (Brownie points)
+- **BLoC Architecture**: The app uses the BLoC pattern for state management.
+- **Dio**: For handling HTTP requests.
+- **Animations**:
+    - **Experience Screen**: When a card is selected, it animates and slides to the first index.
+    - **Question Screen**: The `Next` button width animates when the audio and video recording buttons disappear.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Demo
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Here's a short demo clip showcasing the app's functionalities:  
+([URL](https://drive.google.com/file/d/1IE8K5dR_b_hc3cnFNK6d1ihm6b1oEvjZ/view?usp=sharing))
