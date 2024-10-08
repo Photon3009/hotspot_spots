@@ -23,4 +23,4 @@
 ## Demo
 
 Here's a short demo clip showcasing the app's functionalities:  
-([URL](https://drive.google.com/file/d/1IE8K5dR_b_hc3cnFNK6d1ihm6b1oEvjZ/view?usp=sharing))
+([URL](https://drive.google.com/file/d/1kMD0IyXaPxJYNq5LfgYimoUYCm_fDFir/view?usp=sharing))
