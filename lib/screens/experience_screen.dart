@@ -1,20 +1,13 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:hotspot_hosts/blocs/audio_bloc.dart';
-import 'package:hotspot_hosts/blocs/video_bloc.dart';
 import 'package:hotspot_hosts/model/experience.dart';
-import 'package:hotspot_hosts/screens/onboarding_screen.dart';
 import 'package:hotspot_hosts/services/experience_service.dart';
 import 'package:hotspot_hosts/widgets/curvy_background.dart';
 import 'package:hotspot_hosts/widgets/next_button.dart';
 import 'package:hotspot_hosts/widgets/wavy_line_progress.dart';
 
 class ExperienceSelectionScreen extends StatefulWidget {
-  final VideoBloc videoBloc;
-  final AudioBloc audioBloc;
-
-  ExperienceSelectionScreen({required this.videoBloc, required this.audioBloc});
+  const ExperienceSelectionScreen({super.key});
 
   @override
   _ExperienceSelectionScreenState createState() =>
@@ -46,7 +39,7 @@ class _ExperienceSelectionScreenState extends State<ExperienceSelectionScreen> {
       setState(() {
         isLoading = false;
       });
-      print('Error: $e');
+      debugPrint('Error: $e');
     }
   }
 
@@ -196,19 +189,10 @@ class _ExperienceSelectionScreenState extends State<ExperienceSelectionScreen> {
                     child: NextButton(
                       isActive: selectedExperiences.isNotEmpty,
                       onPressed: () {
-                        print('Selected experiences: $selectedExperiences');
-                        print('Description: $description');
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => MultiBlocProvider(
-                              providers: [
-                                BlocProvider.value(value: widget.videoBloc),
-                                BlocProvider.value(value: widget.audioBloc),
-                              ],
-                              child: OnboardingScreen(),
-                            ),
-                          ),
-                        );
+                        debugPrint(
+                            'Selected experiences: $selectedExperiences');
+                        debugPrint('Description: $description');
+                        Navigator.of(context).pushNamed('/onboarding');
                       },
                     ),
                   ),
@@ -225,11 +209,11 @@ class ExperienceCard extends StatefulWidget {
   final VoidCallback onTap;
 
   const ExperienceCard({
-    Key? key,
+    super.key,
     required this.experience,
     required this.isSelected,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   _ExperienceCardState createState() => _ExperienceCardState();

@@ -47,6 +47,9 @@ dependencies:
   flutter_bloc: ^8.1.6
   flutter_audio_waveforms: ^1.2.1+8
   rxdart: ^0.28.0
+  just_waveform: ^0.0.5
+  audio_waveforms: ^1.0.5
+  video_thumbnail: ^0.5.0
 
 dev_dependencies:
   flutter_test:

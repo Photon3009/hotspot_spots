@@ -1,15 +1,12 @@
-// ignore_for_file: unnecessary_brace_in_string_interps
-
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:record/record.dart';
+import 'package:just_audio/just_audio.dart' as just_audio;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'dart:io';
-
-import 'package:rxdart/rxdart.dart';
+import 'package:audio_waveforms/audio_waveforms.dart';
 
 // Events
 abstract class AudioEvent extends Equatable {
@@ -29,103 +26,107 @@ class PauseAudio extends AudioEvent {}
 
 class DeleteAudio extends AudioEvent {}
 
+class UpdateDuration extends AudioEvent {
+  final Duration duration;
+  const UpdateDuration(this.duration);
+
+  @override
+  List<Object> get props => [duration];
+}
+
+class AudioPlaybackCompleted extends AudioEvent {}
+
 // States
 abstract class AudioState extends Equatable {
   final bool isAudioPlaying;
   final bool isAudioRecording;
   final bool isRecorderVisible;
-  final List<double> waveformData;
+  final RecorderController? recorderController;
+  final PlayerController? playerController;
+  final Duration? duration;
 
   const AudioState({
     required this.isRecorderVisible,
     required this.isAudioPlaying,
     required this.isAudioRecording,
-    this.waveformData = const [],
+    this.recorderController,
+    this.playerController,
+    this.duration,
   });
 
   @override
-  List<Object> get props =>
-      [isRecorderVisible, isAudioPlaying, isAudioRecording, waveformData];
+  List<Object?> get props => [
+        isRecorderVisible,
+        isAudioPlaying,
+        isAudioRecording,
+        recorderController,
+        playerController,
+        duration,
+      ];
 }
 
 class AudioInitial extends AudioState {
   const AudioInitial()
       : super(
-            isRecorderVisible: false,
-            isAudioPlaying: false,
-            isAudioRecording: false);
+          isRecorderVisible: false,
+          isAudioPlaying: false,
+          isAudioRecording: false,
+        );
 }
 
 class AudioRecording extends AudioState {
-  final Stream<Duration> duration;
-
   const AudioRecording({
-    required this.duration,
-    required super.waveformData,
+    required RecorderController recorderController,
+    required Duration duration,
   }) : super(
           isRecorderVisible: true,
           isAudioPlaying: false,
           isAudioRecording: true,
+          recorderController: recorderController,
+          duration: duration,
         );
-
-  @override
-  List<Object> get props => [
-        duration,
-        isRecorderVisible,
-        isAudioPlaying,
-        isAudioRecording,
-        waveformData
-      ];
 }
 
 class AudioRecorded extends AudioState {
   final String path;
 
-  const AudioRecorded({required this.path, required super.waveformData})
-      : super(
-            isRecorderVisible: true,
-            isAudioPlaying: false,
-            isAudioRecording: false);
+  const AudioRecorded({
+    required this.path,
+    required PlayerController playerController,
+    required Duration duration,
+  }) : super(
+          isRecorderVisible: true,
+          isAudioPlaying: false,
+          isAudioRecording: false,
+          playerController: playerController,
+          duration: duration,
+        );
 
   @override
-  List<Object> get props =>
-      [path, isRecorderVisible, isAudioPlaying, isAudioRecording];
+  List<Object> get props => [super.props, path];
 }
 
 class AudioPlaying extends AudioState {
-  const AudioPlaying({required super.waveformData})
-      : super(
+  const AudioPlaying({
+    required PlayerController playerController,
+    required Duration duration,
+  }) : super(
           isRecorderVisible: true,
           isAudioPlaying: true,
           isAudioRecording: false,
+          playerController: playerController,
+          duration: duration,
         );
 }
 
-class AudioPaused extends AudioState {
-  const AudioPaused({required super.waveformData})
-      : super(
-            isRecorderVisible: true,
-            isAudioPlaying: false,
-            isAudioRecording: false);
-}
-
-class AudioDeletedState extends AudioState {
-  const AudioDeletedState({required super.waveformData})
-      : super(
-            isRecorderVisible: false,
-            isAudioPlaying: false,
-            isAudioRecording: false);
-}
-
 class AudioBloc extends Bloc<AudioEvent, AudioState> {
-  final AudioRecorder _audioRecorder = AudioRecorder();
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  final List<double> _waveformData = [];
-
+  final just_audio.AudioPlayer _audioPlayer = just_audio.AudioPlayer();
+  RecorderController? _recorderController;
+  PlayerController? _playerController;
   String? _recordingPath;
-  Stream<Duration> _durationTimer = Stream<Duration>.periodic(
-      const Duration(seconds: 1), (count) => Duration(seconds: count));
-  bool _isTimer = false;
+  Timer? _durationTimer;
+  Duration _recordingDuration = Duration.zero;
+  StreamSubscription<PlayerState>? _playerStateSubscription;
 
   AudioBloc() : super(const AudioInitial()) {
     on<StartRecording>(_onStartRecording);
@@ -133,100 +134,122 @@ class AudioBloc extends Bloc<AudioEvent, AudioState> {
     on<PlayAudio>(_onPlayAudio);
     on<PauseAudio>(_onPauseAudio);
     on<DeleteAudio>(_onDeleteAudio);
+    on<UpdateDuration>(_onUpdateDuration);
+    on<AudioPlaybackCompleted>(_onAudioPlaybackCompleted);
   }
 
   Future<void> _onStartRecording(
       StartRecording event, Emitter<AudioState> emit) async {
-    if (await _audioRecorder.hasPermission()) {
-      final directory = await getApplicationDocumentsDirectory();
-      _recordingPath = p.join(
-          directory.path, 'audio_${DateTime.now().millisecondsSinceEpoch}.wav');
+    final directory = await getApplicationDocumentsDirectory();
+    _recordingPath = p.join(
+        directory.path, 'audio_${DateTime.now().millisecondsSinceEpoch}.wav');
 
-      await _audioRecorder.start(const RecordConfig(), path: _recordingPath!);
-      _isTimer = true;
+    _recorderController = RecorderController()
+      ..androidEncoder = AndroidEncoder.aac
+      ..androidOutputFormat = AndroidOutputFormat.mpeg4
+      ..iosEncoder = IosEncoder.kAudioFormatMPEG4AAC
+      ..sampleRate = 44100;
 
-      // Initialize the duration timer
-      _durationTimer = Stream<Duration>.periodic(
-        const Duration(seconds: 1),
-        (count) => Duration(seconds: count),
-      ).takeWhile((_) => _isTimer);
+    await _recorderController!.record(path: _recordingPath);
 
-      // Clear previous waveform data
-      _waveformData.clear();
+    _recordingDuration = Duration.zero;
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _recordingDuration += const Duration(seconds: 1);
+      add(UpdateDuration(_recordingDuration));
+    });
 
-      // Create a broadcast stream for amplitude changes
-      final amplitudeStream = _audioRecorder
-          .onAmplitudeChanged(const Duration(milliseconds: 100))
-          .asBroadcastStream();
+    debugPrint("State: AudioRecording");
 
-      // Listen to the amplitude changes and emit a new state with updated waveform data
-      amplitudeStream.listen((amp) {
-        _waveformData.add(amp.current.toDouble());
-        print("Waveform data updated: $_waveformData");
-
-        // Emit a new AudioRecording state whenever there's an update
-        emit(AudioRecording(
-          duration: _durationTimer,
-          waveformData: List.from(_waveformData),
-        ));
-      });
-
-      // // Optional: Listen for duration changes and emit state updates
-      // _durationTimer.listen((duration) {
-      //   emit(AudioRecording(
-      //     duration: _durationTimer,
-      //     waveformData: List.from(_waveformData),
-      //   ));
-      // });
-      emit(AudioRecording(
-        duration: _durationTimer,
-        waveformData: List.from(_waveformData),
-      ));
-      print("Recording started.");
-    } else {
-      print("Recording permission denied.");
-    }
+    emit(AudioRecording(
+      recorderController: _recorderController!,
+      duration: _recordingDuration,
+    ));
   }
 
   Future<void> _onStopRecording(
       StopRecording event, Emitter<AudioState> emit) async {
-    _isTimer = false;
-    final path = await _audioRecorder.stop();
+    final path = await _recorderController?.stop();
+    _recorderController?.dispose();
+    _durationTimer?.cancel();
+
     if (path != null) {
-      print("audio recorded✨✨✨✨✨✨");
-      emit(AudioRecorded(path: path, waveformData: List.from(_waveformData)));
+      _playerController = PlayerController();
+      await _playerController!.preparePlayer(
+        path: path,
+        noOfSamples: 100,
+      );
+      debugPrint("State: AudioRecorded");
+      emit(AudioRecorded(
+        path: path,
+        playerController: _playerController!,
+        duration: _recordingDuration,
+      ));
     } else {
-      emit(const AudioDeletedState(waveformData: []));
+      debugPrint("State: AudioInitial");
+      emit(const AudioInitial());
     }
   }
 
   Future<void> _onPlayAudio(PlayAudio event, Emitter<AudioState> emit) async {
     if (_recordingPath != null) {
-      await _audioPlayer.setFilePath(_recordingPath!);
-      await _audioPlayer.play();
-      print("audio playing✨✨✨✨✨✨");
+      try {
+        final currentState = _playerController!.playerState;
 
-      _audioPlayer.positionStream.listen((position) {
-        final progress =
-            position.inMilliseconds / _audioPlayer.duration!.inMilliseconds;
-        final visibleWaveform =
-            _waveformData.sublist(0, (_waveformData.length * progress).round());
-        emit(AudioPlaying(waveformData: visibleWaveform));
-      });
-
-      _audioPlayer.playerStateStream.listen((playerState) {
-        if (playerState.processingState == ProcessingState.completed) {
-          print("audio paused✨✨✨✨✨✨");
-          add(PauseAudio());
+        // Reset player if it's not in a playable state
+        if (currentState != PlayerState.initialized &&
+            currentState != PlayerState.paused) {
+          await _playerController!.stopPlayer();
+          await _playerController!.preparePlayer(
+            path: _recordingPath!,
+            noOfSamples: 100,
+          );
         }
-      });
+
+        await _playerController!.startPlayer();
+        _playerStateSubscription?.cancel();
+        _playerStateSubscription =
+            _playerController!.onPlayerStateChanged.listen((state) {
+          if (state == PlayerState.stopped) {
+            add(AudioPlaybackCompleted());
+          }
+        });
+        debugPrint("State: AudioPlaying");
+        emit(AudioPlaying(
+          playerController: _playerController!,
+          duration: _recordingDuration,
+        ));
+      } catch (e) {
+        debugPrint('Error playing audio: $e');
+      }
+    } else {}
+  }
+
+  void _onPauseAudio(PauseAudio event, Emitter<AudioState> emit) async {
+    if (_playerController != null) {
+      try {
+        await _playerController!.pausePlayer();
+        debugPrint("State: AudioPaused");
+        emit(AudioRecorded(
+          path: _recordingPath!,
+          playerController: _playerController!,
+          duration: _recordingDuration,
+        ));
+      } catch (e) {
+        debugPrint('Error pausing audio: $e');
+      }
     }
   }
 
-  Future<void> _onPauseAudio(PauseAudio event, Emitter<AudioState> emit) async {
-    await _audioPlayer.pause();
-    print("audio paused✨✨✨✨✨✨");
-    emit(AudioPaused(waveformData: List.from(_waveformData)));
+  void _onAudioPlaybackCompleted(
+      AudioPlaybackCompleted event, Emitter<AudioState> emit) {
+    if (state is AudioPlaying) {
+      debugPrint("State: AudioRecorded/Completed");
+      emit(AudioRecorded(
+        path: _recordingPath!,
+        playerController: _playerController!,
+        duration: _recordingDuration,
+      ));
+    }
   }
 
   Future<void> _onDeleteAudio(
@@ -237,16 +260,31 @@ class AudioBloc extends Bloc<AudioEvent, AudioState> {
         await file.delete();
       }
       _recordingPath = null;
+      _recordingDuration = Duration.zero;
       await _audioPlayer.stop();
-      print("audio deletded✨✨✨✨✨✨");
-      emit(const AudioDeletedState(waveformData: []));
+      _playerController?.dispose();
+      _playerController = null;
+      debugPrint("State: AudioInitial/deleted");
+      emit(const AudioInitial());
+    }
+  }
+
+  void _onUpdateDuration(UpdateDuration event, Emitter<AudioState> emit) {
+    if (state is AudioRecording) {
+      debugPrint("State: AudioRecording/duration");
+      emit(AudioRecording(
+        recorderController: _recorderController!,
+        duration: event.duration,
+      ));
     }
   }
 
   @override
-  Future<void> close() {
-    _audioRecorder.dispose();
-    _audioPlayer.dispose();
+  Future<void> close() async {
+    _durationTimer?.cancel();
+    await _audioPlayer.dispose();
+    _recorderController?.dispose();
+    _playerController?.dispose();
     return super.close();
   }
 }

@@ -1,9 +1,7 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
-// Replace this with your actual SquigglyWaveform widget.
-class SquigglyWaveform extends StatelessWidget {
+class SquigglyWaveform extends StatefulWidget {
   final List<double> samples;
   final double height;
   final double strokeWidth;
@@ -13,7 +11,7 @@ class SquigglyWaveform extends StatelessWidget {
   final Color inactiveColor;
 
   const SquigglyWaveform({
-    super.key,
+    Key? key,
     required this.samples,
     required this.height,
     required this.strokeWidth,
@@ -21,14 +19,66 @@ class SquigglyWaveform extends StatelessWidget {
     required this.width,
     required this.activeColor,
     required this.inactiveColor,
-  });
+  }) : super(key: key);
+
+  @override
+  State<SquigglyWaveform> createState() => _SquigglyWaveformState();
+}
+
+class _SquigglyWaveformState extends State<SquigglyWaveform> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant SquigglyWaveform oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.samples.length > oldWidget.samples.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(width, height),
-      painter: WaveformPainter(samples, strokeWidth, activeColor),
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: ShaderMask(
+        shaderCallback: (Rect bounds) {
+          return LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [widget.activeColor.withOpacity(0), widget.activeColor],
+            stops: const [0.0, 0.2],
+          ).createShader(bounds);
+        },
+        blendMode: BlendMode.dstIn,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          child: CustomPaint(
+            size: Size(widget.samples.length.toDouble() * 2, widget.height),
+            painter: WaveformPainter(
+              widget.samples,
+              widget.strokeWidth,
+              widget.activeColor,
+            ),
+          ),
+        ),
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 }
 
@@ -46,122 +96,32 @@ class WaveformPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke;
 
-    // Create a path for the wave
-    Path path = Path();
+    final path = Path();
+    final midY = size.height / 2;
 
-    // Move to the starting point
-    var startX = 0.0;
-    final startY = size.height / 2; // Midline
-    path.moveTo(startX, startY);
+    if (samples.isNotEmpty) {
+      path.moveTo(0, midY);
 
-    for (int i = 0; i < samples.length; i++) {
-      // Calculate X position for each sample
-      final x = (i / (samples.length - 1)) * size.width;
+      for (int i = 0; i < samples.length; i++) {
+        final x = i * 2.0; // Increase space between samples
+        final normalizedSample = samples[i] / 100; // Assuming max value is 100
+        final y = midY + (normalizedSample * midY * math.sin(i * 0.1));
 
-      // Calculate height based on the sample value
-      final lineHeight =
-          (samples[i] / 100) * (size.height / 2); // Adjust divisor if needed
-
-      // Draw the top part of the wave
-      final topY = (size.height / 2) - lineHeight; // Y position for top wave
-      final bottomY =
-          (size.height / 2) + lineHeight; // Y position for bottom wave
-
-      // If it's the first point, just move to it
-      if (i == 0) {
-        path.lineTo(x, topY);
-        path.lineTo(x, bottomY);
-      } else {
-        // Use quadraticBezierTo for roundness between points
-        path.quadraticBezierTo(
-          (startX + x) / 2, // Control point for smoothness
-          (startY + topY) / 2, // Control point Y for the top curve
-          x, topY,
-        );
-        path.lineTo(x, bottomY);
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          final prevX = (i - 1) * 2.0;
+          final prevY =
+              midY + (samples[i - 1] / 100 * midY * math.sin((i - 1) * 0.1));
+          final controlX = (prevX + x) / 2;
+          path.quadraticBezierTo(controlX, prevY, x, y);
+        }
       }
-
-      startX = x; // Update startX for the next segment
     }
 
-    // Draw the complete wave
-    canvas.drawPath(path, paint);
-
-    // Draw the bottom part of the wave
-    path = Path();
-    path.moveTo(0, size.height / 2); // Start at the middle line
-    for (int i = 0; i < samples.length; i++) {
-      final x = (i / (samples.length - 1)) * size.width;
-      final lineHeight = (samples[i] / 100) * (size.height / 2);
-      final bottomY =
-          (size.height / 2) + lineHeight; // Y position for bottom wave
-
-      if (i == 0) {
-        path.lineTo(x, bottomY);
-      } else {
-        path.quadraticBezierTo(
-          (startX + x) / 2,
-          (startY + bottomY) / 2,
-          x,
-          bottomY,
-        );
-      }
-
-      startX = x; // Update startX for the next segment
-    }
-
-    // Draw the bottom wave
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return true;
-  }
-}
-
-class AudioWaveformPage extends StatefulWidget {
-  const AudioWaveformPage({super.key});
-
-  @override
-  _AudioWaveformPageState createState() => _AudioWaveformPageState();
-}
-
-class _AudioWaveformPageState extends State<AudioWaveformPage> {
-  final Random _random = Random();
-  List<double> _waveformData = [];
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _startGeneratingSamples();
-  }
-
-  void _startGeneratingSamples() {
-    // Update the waveform data every 100 milliseconds
-    _timer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      _waveformData = List.generate(100, (index) => _random.nextDouble() * 100);
-      setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SquigglyWaveform(
-      samples: _waveformData,
-      height: 30,
-      strokeWidth: 4,
-      showActiveWaveform: true,
-      width: MediaQuery.of(context).size.width * 0.6,
-      activeColor: Colors.grey,
-      inactiveColor: Colors.grey,
-    );
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

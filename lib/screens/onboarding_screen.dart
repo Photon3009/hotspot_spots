@@ -1,8 +1,8 @@
+import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hotspot_hosts/blocs/audio_bloc.dart';
 import 'package:hotspot_hosts/blocs/video_bloc.dart';
-import 'package:hotspot_hosts/widgets/audio_wave.dart';
 import 'package:hotspot_hosts/widgets/build_buttons.dart';
 import 'package:hotspot_hosts/widgets/curvy_background.dart';
 import 'package:hotspot_hosts/widgets/next_button.dart';
@@ -15,11 +15,13 @@ class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   _OnboardingScreenState createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final TextEditingController _textController = TextEditingController();
+  bool isRecorderVisible = false;
 
   @override
   void initState() {
@@ -36,12 +38,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<Duration> _getAudioDuration(AudioState state) async {
     if (state is! AudioRecording) {
       final player = AudioPlayer();
-      await player.setFilePath(state is AudioRecorded ? state.path : '');
+      await player.setFilePath((state is AudioRecorded) ? state.path : '');
       final duration = player.duration ?? Duration.zero;
       await player.dispose();
       return duration;
     }
     return Duration.zero;
+  }
+
+  void _toggleRecorderVisibility() {
+    setState(() {
+      isRecorderVisible = !isRecorderVisible;
+    });
   }
 
   @override
@@ -125,24 +133,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       const SizedBox(height: 24),
                       _buildTextField(),
                       const SizedBox(height: 8),
-                      BlocBuilder<AudioBloc, AudioState>(
-                        builder: (context, audioState) {
-                          if (audioState is AudioRecording ||
-                              audioState is AudioRecorded ||
-                              audioState is AudioPlaying ||
-                              audioState is AudioPaused) {
-                            return _buildRecorderSection(context, audioState);
-                          }
-                          return Container();
-                        },
-                      ),
+                      if (isRecorderVisible) _buildRecorderSection(context),
                     ],
                     if (videoState is VideoRecording)
                       _buildVideoRecordingSection(context, videoState)
-                    else if (videoState is VideoRecorded)
-                      _buildVideoRecordedSection(context, videoState)
-                    else if (videoState is VideoPlaying ||
+                    else if (videoState is VideoRecorded ||
                         videoState is VideoPaused)
+                      _buildVideoRecordedSection(context, videoState)
+                    else if (videoState is VideoPlaying)
                       _buildVideoPlaybackSection(context, videoState)
                     else
                       Container(),
@@ -153,17 +151,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
-    );
-  }
-
-  Row _buildAppBarTitle() {
-    return Row(
-      children: [
-        Container(width: 20, height: 4, color: const Color(0xFF9196FF)),
-        const SizedBox(width: 4),
-        Container(width: 20, height: 4, color: Colors.grey),
-      ],
+      bottomNavigationBar: _buildBottomNavigationBar(context),
     );
   }
 
@@ -192,65 +180,70 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildRecorderSection(BuildContext context, AudioState state) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.black,
-              Colors.grey[800]!,
-              Colors.black,
-            ],
-            stops: const [
-              0.0, // Position of the first color
-              0.5, // Position of the second color (center)
-              1.0, // Position of the third color
-            ],
-          ),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
+  Widget _buildRecorderSection(BuildContext context) {
+    return BlocBuilder<AudioBloc, AudioState>(
+      builder: (context, state) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.black,
+                  Colors.grey[800]!,
+                  Colors.black,
+                ],
+                stops: const [
+                  0.0, // Position of the first color
+                  0.5, // Position of the second color (center)
+                  1.0, // Position of the third color
+                ],
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border:
+                  Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  state is AudioRecording
-                      ? 'Recording Audio...'
-                      : 'Audio Recorded',
-                  style: const TextStyle(
-                      fontFamily: 'SpaceGrotesk',
-                      color: Colors.white,
-                      fontWeight: FontWeight.w400,
-                      fontSize: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      (state is AudioInitial)
+                          ? 'Record Audio'
+                          : (state is AudioRecording)
+                              ? 'Recording Audio'
+                              : 'Audio Recorded',
+                      style: const TextStyle(
+                          fontFamily: 'SpaceGrotesk',
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 20),
+                    ),
+                    (state is! AudioInitial)
+                        ? IconButton(
+                            onPressed: () {
+                              context.read<AudioBloc>().add(DeleteAudio());
+                            },
+                            icon: const Icon(Icons.delete_outline,
+                                color: Color(0xFF9196FF)),
+                          )
+                        : Container(),
+                  ],
                 ),
-                IconButton(
-                  onPressed: () {
-                    if (state is AudioRecording ||
-                        state is AudioPlaying ||
-                        state is AudioPaused ||
-                        state is AudioRecorded) {
-                      context.read<AudioBloc>().add(DeleteAudio());
-                    }
-                  },
-                  icon: const Icon(Icons.delete, color: Color(0xFF9196FF)),
-                ),
+                const SizedBox(height: 6),
+                _buildRecorderControls(context, state),
+                const SizedBox(height: 4),
               ],
             ),
-            const SizedBox(height: 4),
-            _buildRecorderControls(context, state),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -267,9 +260,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           child: IconButton(
             onPressed: () {
-              if (state is AudioRecording) {
+              if (state is AudioInitial) {
+                audioBloc.add(StartRecording());
+              } else if (state is AudioRecording) {
                 audioBloc.add(StopRecording());
-              } else if (state is AudioRecorded || state is AudioPaused) {
+              } else if (state is AudioRecorded) {
                 audioBloc.add(PlayAudio());
               } else if (state is AudioPlaying) {
                 audioBloc.add(PauseAudio());
@@ -277,10 +272,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             },
             icon: Icon(
               state is AudioRecording
-                  ? Icons.stop
+                  ? Icons.done
                   : (state is AudioPlaying
                       ? Icons.pause
-                      : (state is AudioPaused || state is AudioRecorded
+                      : (state is AudioRecorded
                           ? Icons.play_arrow
                           : Icons.mic)),
               color: Colors.white,
@@ -290,45 +285,53 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(width: 8),
         BlocBuilder<AudioBloc, AudioState>(
           builder: (context, state) {
-            if (state is! AudioRecording) {
+            if (state is AudioRecording && state.recorderController != null) {
+              return SizedBox(
+                width: MediaQuery.of(context).size.width * 0.6,
+                child: AudioWaveforms(
+                  enableGesture: true,
+                  size: Size(MediaQuery.of(context).size.width, 50),
+                  recorderController: state.recorderController!,
+                  waveStyle: const WaveStyle(
+                    waveColor: Colors.white,
+                    extendWaveform: true,
+                    showMiddleLine: false,
+                  ),
+                ),
+              );
+            } else {
               return const SizedBox.shrink();
             }
-            return AudioWaveformPage();
           },
         ),
         const SizedBox(width: 8),
-        if (state is AudioRecording)
-          StreamBuilder<Duration>(
-            stream: state.duration,
-            builder: (context, snapshot) {
-              final duration = snapshot.data;
+        BlocBuilder<AudioBloc, AudioState>(
+          builder: (context, state) {
+            if (state is AudioRecording) {
               return Text(
-                _formatDuration(duration ?? Duration.zero),
+                _formatDuration(state.duration!),
                 style: const TextStyle(color: Colors.white, fontSize: 16),
               );
-            },
-          ),
-        if (state is AudioPlaying ||
-            state is AudioPaused ||
-            state is AudioRecorded)
+            } else {
+              return Container();
+            }
+          },
+        ),
+        if (state is AudioPlaying || state is AudioRecorded)
           BlocBuilder<AudioBloc, AudioState>(
             builder: (context, state) {
-              if (state is! AudioRecording) {
-                return FutureBuilder<Duration>(
-                  future: _getAudioDuration(state),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasData) {
-                      return Text(
-                        _formatDuration(snapshot.data!),
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 16),
-                      );
-                    }
-                    return Container();
-                  },
-                );
-              }
-              return Container();
+              return FutureBuilder<Duration>(
+                future: _getAudioDuration(state),
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    return Text(
+                      _formatDuration(snapshot.data!),
+                      style: const TextStyle(color: Colors.white, fontSize: 16),
+                    );
+                  }
+                  return Container();
+                },
+              );
             },
           ),
       ],
@@ -342,7 +345,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildVideoRecordedSection(BuildContext context, VideoRecorded state) {
+  Widget _buildVideoRecordedSection(BuildContext context, VideoState state) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -354,11 +357,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Colors.grey[800]!,
             Colors.black,
           ],
-          stops: const [
-            0.0, // Position of the first color
-            0.5, // Position of the second color (center)
-            1.0, // Position of the third color
-          ],
+          stops: const [0.0, 0.5, 1.0],
         ),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
@@ -366,25 +365,68 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            onPressed: () {
-              context.read<VideoBloc>().add(PlayVideo());
-            },
-            icon: const Icon(Icons.play_arrow, color: Colors.white),
-          ),
+          _buildThumbnailWithPlayButton(context, state),
           const Text(
             "Video Recorded",
-            style: TextStyle(fontFamily: 'SpaceGrotesk', color: Colors.white),
+            style: TextStyle(
+                fontFamily: 'SpaceGrotesk',
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w700),
           ),
           IconButton(
             onPressed: () {
               context.read<VideoBloc>().add(DeleteVideo());
             },
-            icon: const Icon(Icons.delete, color: Color(0xFF9196FF)),
+            icon: const Icon(Icons.delete_outline, color: Color(0xFF9196FF)),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildThumbnailWithPlayButton(BuildContext context, VideoState state) {
+    if (state is VideoRecorded || state is VideoPaused) {
+      // Since both VideoRecorded and VideoPaused contain a 'frame' (thumbnail), we can cast it safely.
+      final frame =
+          state is VideoRecorded ? state.frame : (state as VideoPaused).frame;
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(
+              frame,
+              width: 55,
+              height: 55,
+              fit: BoxFit.cover,
+            ),
+          ),
+          Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0xFF947467),
+            ),
+            height: 35,
+            width: 35,
+            child: Center(
+              child: IconButton(
+                onPressed: () {
+                  context.read<VideoBloc>().add(PlayVideo());
+                },
+                padding: EdgeInsets.zero,
+                icon: const Icon(
+                  Icons.play_arrow_outlined,
+                  color: Colors.white,
+                  size: 25,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   Widget _buildVideoPlaybackSection(BuildContext context, VideoState state) {
@@ -443,7 +485,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPressed: () {
                   videoBloc.add(DeleteVideo());
                 },
-                icon: const Icon(Icons.delete, color: Color(0xFF9196FF)),
+                icon:
+                    const Icon(Icons.delete_outline, color: Color(0xFF9196FF)),
               ),
             ],
           ),
@@ -452,7 +495,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  BottomAppBar _buildBottomNavigationBar() {
+  BottomAppBar _buildBottomNavigationBar(BuildContext context) {
+    final videoBloc = context.read<VideoBloc>();
+    final videoPlayerController = videoBloc.videoPlayerController;
     return BottomAppBar(
       color: Colors.black,
       child: Padding(
@@ -479,10 +524,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           return buildButton(
                             context: context,
                             icon: Icons.mic,
-                            isSelected: state is AudioRecording,
-                            onPressed: () {
-                              context.read<AudioBloc>().add(StartRecording());
-                            },
+                            isSelected: isRecorderVisible,
+                            onPressed: _toggleRecorderVisibility,
+                            // context.read<AudioBloc>().add(StartRecording());
                           );
                         }),
                         Container(
@@ -494,7 +538,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             builder: (context, state) {
                           return buildButton(
                             context: context,
-                            icon: Icons.videocam,
+                            icon: (videoPlayerController != null)
+                                ? (videoPlayerController.value.isPlaying)
+                                    ? Icons.stop
+                                    : Icons.videocam
+                                : Icons.videocam,
                             isSelected: state is VideoRecording,
                             onPressed: () {
                               if (state is VideoRecording) {
